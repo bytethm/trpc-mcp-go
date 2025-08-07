@@ -27,12 +27,12 @@ func main() {
 		mcp.WithMessageEndpoint("/message"), // Explicitly set message endpoint.
 	)
 
-	// Register tools.
-	greetTool := mcp.NewTool("greet",
-		mcp.WithDescription("Greet a user by name"),
-		mcp.WithString("name", mcp.Description("Name of the person to greet")),
-	)
-	server.RegisterTool(greetTool, handleGreet)
+	//// Register tools.
+	//greetTool := mcp.NewTool("greet",
+	//	mcp.WithDescription("Greet a user by name"),
+	//	mcp.WithString("name", mcp.Description("Name of the person to greet")),
+	//)
+	//server.RegisterTool(greetTool, handleGreet)
 
 	weatherTool := mcp.NewTool("weather",
 		mcp.WithDescription("Get weather information for a city"),

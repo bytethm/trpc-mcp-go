@@ -21,7 +21,7 @@ func main() {
 	log.Printf("Starting SSE Compatibility client (2024-11-05 protocol)...")
 
 	// Create context, set 60-second timeout (increase timeout).
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Second)
 	defer cancel()
 
 	// Create client information.
@@ -33,6 +33,7 @@ func main() {
 	// Create client, connect to server.
 	// Use NewSSEClient to create an SSE client that supports the 2024-11-05 protocol.
 	serverURL := "http://localhost:4000/sse"
+	//serverURL := "http://9.139.0.104:3000/lead/sse"
 	log.Printf("Creating SSE client for 2024-11-05 protocol compatibility...")
 	log.Printf("Connecting to %s...", serverURL)
 
@@ -77,6 +78,8 @@ func main() {
 	log.Printf("Initialization succeeded: Server=%s %s, Protocol=%s",
 		initResp.ServerInfo.Name, initResp.ServerInfo.Version, initResp.ProtocolVersion)
 	log.Printf("Server capabilities: %+v", initResp.Capabilities)
+
+	//time.Sleep(100 * time.Second)
 
 	// Get available tool list.
 	log.Printf("Listing tools...")
