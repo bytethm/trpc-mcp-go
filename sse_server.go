@@ -392,6 +392,10 @@ func (s *SSEServer) handleSSE(w http.ResponseWriter, r *http.Request) {
 
 	// Create session.
 	sessionID := s.sessionIDGenerator.GenerateSessionID(r)
+
+	// DEBUG: Log session creation
+	s.logger.Debugf("[🔍TEMP-DEBUG][handleSSE] 🟢 Creating new session: %s", sessionID)
+
 	session := &sseSession{
 		done:                make(chan struct{}),
 		eventQueue:          make(chan string, 100),
@@ -402,6 +406,9 @@ func (s *SSEServer) handleSSE(w http.ResponseWriter, r *http.Request) {
 		data:                make(map[string]interface{}),
 	}
 	s.sessions.Store(sessionID, session)
+
+	// DEBUG: Log session stored
+	s.logger.Debugf("[🔍TEMP-DEBUG][handleSSE] 🟢 Session stored: %s", sessionID)
 
 	// Apply context function.
 	ctx := r.Context()
@@ -424,6 +431,9 @@ func (s *SSEServer) handleSSE(w http.ResponseWriter, r *http.Request) {
 	// Send initial connection message.
 	sendSSEComment(w, flusher, &session.writeMu, "connection established")
 
+	// DEBUG: Log before starting goroutines
+	s.logger.Debugf("[🔍TEMP-DEBUG][handleSSE] 🟢 Starting goroutines for session %s", sessionID)
+
 	// Start notification handler.
 	go handleNotifications(s.logger, w, flusher, session)
 
@@ -435,20 +445,28 @@ func (s *SSEServer) handleSSE(w http.ResponseWriter, r *http.Request) {
 		go handleKeepAlive(s.logger, w, flusher, session, s.keepAliveInterval)
 	}
 
+	// DEBUG: Log goroutines started
+	s.logger.Debugf("[🔍TEMP-DEBUG][handleSSE] 🟢 All goroutines started for session %s", sessionID)
+
 	// Wait for connection to close.
+	// DEBUG: Log before waiting
+	s.logger.Debugf("[🔍TEMP-DEBUG][handleSSE] 🔴 Waiting for connection to close for session %s", sessionID)
+
 	select {
 	case <-ctx.Done():
-		s.logger.Debugf("Context cancelled for session %s", sessionID)
+		s.logger.Debugf("[🔍TEMP-DEBUG][handleSSE] 🔴 Context cancelled for session %s, error: %v", sessionID, ctx.Err())
 	case <-r.Context().Done():
-		s.logger.Debugf("Request context cancelled for session %s", sessionID)
+		s.logger.Debugf("[🔍TEMP-DEBUG][handleSSE] 🔴 Request context cancelled for session %s, error: %v", sessionID, r.Context().Err())
 	case <-session.done:
-		s.logger.Debugf("Session %s closed", sessionID)
+		s.logger.Debugf("[🔍TEMP-DEBUG][handleSSE] 🔴 Session done signal received for %s", sessionID)
 	}
 
 	// Clean up resources.
+	s.logger.Debugf("[🔍TEMP-DEBUG][handleSSE] 🔴 Starting cleanup for session %s", sessionID)
+	s.logger.Debugf("[🔍TEMP-DEBUG][handleSSE] 🔴 Closing session.done channel for session %s", sessionID)
 	close(session.done)
 	s.sessions.Delete(sessionID)
-	s.logger.Debugf("Cleaned up session %s", sessionID)
+	s.logger.Debugf("[🔍TEMP-DEBUG][handleSSE] 🔴 Cleanup complete for session %s", sessionID)
 }
 
 // sendSSEEvent sends SSE event and returns whether it is successful.
@@ -538,44 +556,64 @@ func handleNotifications(logger Logger, w http.ResponseWriter, flusher http.Flus
 
 // handleEventQueue handles event queue.
 func handleEventQueue(logger Logger, w http.ResponseWriter, flusher http.Flusher, session *sseSession) {
+	// DEBUG: Log handler start
+	logger.Debugf("[🔍TEMP-DEBUG][eventQueue] 🟡 Handler started for session: %s", session.sessionID)
+
 	// Recover from panic when connection is closed.
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Debugf("Event queue handler panicked for session %s: %v (connection likely closed)", session.sessionID, r)
+			logger.Errorf("[🔍TEMP-DEBUG][eventQueue] ❌ Handler panicked for session %s: %v (connection likely closed)", session.sessionID, r)
 		}
+		logger.Debugf("[🔍TEMP-DEBUG][eventQueue] 🟡 Handler exiting for session: %s", session.sessionID)
 	}()
 
 	for {
 		select {
 		case event := <-session.eventQueue:
+			// DEBUG: Log event received
+			logger.Debugf("[🔍TEMP-DEBUG][eventQueue] 🟡 Received event from queue, session: %s, event length: %d bytes",
+				session.sessionID, len(event))
+
 			// Check if session is already closed before writing.
 			select {
 			case <-session.done:
-				logger.Debugf("Session %s is closed, stopping event queue handler", session.sessionID)
+				logger.Debugf("[🔍TEMP-DEBUG][eventQueue] ❌ Session %s is closed, stopping handler", session.sessionID)
 				return
 			default:
 			}
 
 			session.writeMu.Lock()
+			// DEBUG: Log write attempt
+			logger.Debugf("[🔍TEMP-DEBUG][eventQueue] 🟡 Acquired write lock, writing event to HTTP response...")
+
 			// Write event with error handling.
 			if _, err := fmt.Fprint(w, event); err != nil {
-				logger.Debugf("Failed to write event for session %s: %v (connection closed)", session.sessionID, err)
+				logger.Debugf("[🔍TEMP-DEBUG][eventQueue] ❌ Failed to write event for session %s: %v (connection closed)", session.sessionID, err)
 				session.writeMu.Unlock()
 				return
 			}
+
+			// DEBUG: Log write success
+			logger.Debugf("[🔍TEMP-DEBUG][eventQueue] 🟡 Event written successfully, flushing...")
+
 			// Flush with panic recovery.
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						logger.Debugf("Flush panicked in event queue handler for session %s: %v", session.sessionID, r)
+						logger.Errorf("[🔍TEMP-DEBUG][eventQueue] ❌ Flush panicked for session %s: %v", session.sessionID, r)
 					}
 				}()
 				flusher.Flush()
+				// DEBUG: Log flush success
+				logger.Debugf("[🔍TEMP-DEBUG][eventQueue] ✅ Flushed successfully, event sent to client!")
 			}()
 			session.writeMu.Unlock()
 
+			// DEBUG: Log completion
+			logger.Debugf("[🔍TEMP-DEBUG][eventQueue] 🟡 Released write lock, ready for next event")
+
 		case <-session.done:
-			logger.Debugf("Event queue handler terminated for session %s", session.sessionID)
+			logger.Debugf("[🔍TEMP-DEBUG][eventQueue] 🟡 Session done signal received, handler terminating for session %s", session.sessionID)
 			return
 		}
 	}
@@ -892,6 +930,10 @@ func (s *SSEServer) processRequestAsync(ctx context.Context, request *JSONRPCReq
 	// Create a context that will not be canceled due to HTTP connection closure.
 	detachedCtx := icontext.WithoutCancel(ctx)
 
+	// DEBUG: Log start of processing
+	s.logger.Debugf("[🔍TEMP-DEBUG][processRequest] 🔵 Start processing request, ID: %v, Method: %s, session: %s",
+		request.ID, request.Method, session.sessionID)
+
 	// Check if this is a response to our roots/list request.
 	if s.isRootsListResponse(request) {
 		s.handleRootsListResponse(request)
@@ -900,6 +942,9 @@ func (s *SSEServer) processRequestAsync(ctx context.Context, request *JSONRPCReq
 
 	// Process request.
 	result, err := s.mcpHandler.handleRequest(detachedCtx, request, session)
+
+	// DEBUG: Log handler result
+	s.logger.Debugf("[🔍TEMP-DEBUG][processRequest] 🔵 Handler returned, result type: %T, error: %v", result, err)
 
 	if err != nil {
 		s.handleRequestError(err, request.ID, session)
@@ -924,7 +969,10 @@ func (s *SSEServer) processRequestAsync(ctx context.Context, request *JSONRPCReq
 		return
 	}
 
+	// DEBUG: Log before calling sendSuccessResponse
+	s.logger.Debugf("[🔍TEMP-DEBUG][processRequest] 🔵 Calling sendSuccessResponse for request ID: %v...", request.ID)
 	s.sendSuccessResponse(request.ID, result, session)
+	s.logger.Debugf("[🔍TEMP-DEBUG][processRequest] 🔵 sendSuccessResponse returned for request ID: %v", request.ID)
 }
 
 // isRootsListResponse checks if the request is actually a response to a roots/list request.
@@ -1089,6 +1137,11 @@ func (s *SSEServer) handleRequestError(err error, requestID interface{}, session
 
 // sendSuccessResponse creates and sends a success response.
 func (s *SSEServer) sendSuccessResponse(requestID interface{}, result interface{}, session *sseSession) {
+	// DEBUG: Log function entry
+	s.logger.Debugf("[🔍TEMP-DEBUG][sendSuccess] 🟢 Start, request ID: %v, result type: %T, session: %s",
+		requestID, result, session.sessionID)
+	s.logger.Debugf("[🔍TEMP-DEBUG][sendSuccess] 🟢 Result value: %+v", result)
+
 	// Construct complete JSON-RPC response.
 	response := &JSONRPCResponse{
 		JSONRPC: "2.0",
@@ -1096,24 +1149,43 @@ func (s *SSEServer) sendSuccessResponse(requestID interface{}, result interface{
 		Result:  result,
 	}
 
+	// DEBUG: Log constructed response
+	s.logger.Debugf("[🔍TEMP-DEBUG][sendSuccess] 🟢 Constructed JSON-RPC response wrapper")
+
 	// Serialize full response.
 	fullResponseData, err := json.Marshal(response)
 	if err != nil {
-		s.logger.Errorf("Error encoding full response: %v", err)
+		s.logger.Errorf("[🔍TEMP-DEBUG][sendSuccess] ❌ Error encoding full response: %v", err)
 		return
+	}
+
+	// DEBUG: Log serialization success
+	s.logger.Debugf("[🔍TEMP-DEBUG][sendSuccess] 🟢 JSON serialized successfully, length: %d bytes", len(fullResponseData))
+	if len(fullResponseData) < 500 {
+		s.logger.Debugf("[🔍TEMP-DEBUG][sendSuccess] 🟢 JSON content: %s", string(fullResponseData))
+	} else {
+		s.logger.Debugf("[🔍TEMP-DEBUG][sendSuccess] 🟢 JSON content (truncated): %s...", string(fullResponseData[:500]))
 	}
 
 	// Send response via SSE connection.
 	event := formatSSEEvent("message", fullResponseData)
 
+	// DEBUG: Log event queue status
+	s.logger.Debugf("[🔍TEMP-DEBUG][sendSuccess] 🟢 Formatted SSE event, length: %d bytes", len(event))
+	s.logger.Debugf("[🔍TEMP-DEBUG][sendSuccess] 🟢 Event queue status - capacity: %d, current length: %d",
+		cap(session.eventQueue), len(session.eventQueue))
+	s.logger.Debugf("[🔍TEMP-DEBUG][sendSuccess] 🟢 Attempting to queue to eventQueue...")
+
 	// Send to SSE connection.
 	select {
 	case session.eventQueue <- event:
-		// Response queued successfully.
+		// DEBUG: Log success
+		s.logger.Debugf("[🔍TEMP-DEBUG][sendSuccess] ✅ Response queued successfully to eventQueue!")
 	case <-session.done:
-		s.logger.Debugf("Session closed, cannot send response: %s", session.sessionID)
+		s.logger.Debugf("[🔍TEMP-DEBUG][sendSuccess] ❌ Session closed, cannot send response: %s", session.sessionID)
 	default:
-		s.logger.Errorf("Failed to queue response: event queue full for session %s", session.sessionID)
+		s.logger.Errorf("[🔍TEMP-DEBUG][sendSuccess] ❌ Failed to queue response: event queue full (size: %d/%d) for session %s",
+			len(session.eventQueue), cap(session.eventQueue), session.sessionID)
 	}
 }
 

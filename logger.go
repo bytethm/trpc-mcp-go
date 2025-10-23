@@ -70,7 +70,9 @@ func NewZapLoggerWithLevel(level LogLevel) Logger {
 }
 
 var (
-	defaultLogger Logger = NewZapLogger()
+	// TEMPORARY: Set default logger to Debug level for debugging
+	// TODO: Revert to NewZapLogger() (Info level) before release
+	defaultLogger Logger = NewZapLoggerWithLevel(LogLevelDebug)
 )
 
 // SetDefaultLogger sets the global default logger.
