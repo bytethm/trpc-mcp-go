@@ -165,9 +165,29 @@ func (t *sseClientTransport) start(ctx context.Context) error {
 	}
 
 	// Send the request.
+	// DEBUG: Log SSE connection request details
+	if t.logger != nil {
+		if deadline, ok := sseCtx.Deadline(); ok {
+			timeout := time.Until(deadline)
+			t.logger.Debugf("[🔍TEMP-DEBUG][client-sse] 🟢 Sending SSE GET request to %s with context timeout: %v", 
+				t.baseURL.String(), timeout)
+		} else {
+			t.logger.Debugf("[🔍TEMP-DEBUG][client-sse] 🟢 Sending SSE GET request to %s with NO context timeout", 
+				t.baseURL.String())
+		}
+	}
+	
 	resp, err := t.httpReqHandler.Handle(sseCtx, t.httpClient, req)
 	if err != nil {
+		if t.logger != nil {
+			t.logger.Debugf("[🔍TEMP-DEBUG][client-sse] ❌ SSE GET request failed: %v", err)
+		}
 		return fmt.Errorf("%w: %v", ErrHTTPRequestFailed, err)
+	}
+	
+	// DEBUG: Log SSE connection established
+	if t.logger != nil {
+		t.logger.Debugf("[🔍TEMP-DEBUG][client-sse] ✅ SSE GET request successful, status: %d", resp.StatusCode)
 	}
 
 	// Check status code.
@@ -208,7 +228,18 @@ func (t *sseClientTransport) start(ctx context.Context) error {
 
 // readSSE continuously reads the SSE stream and processes events.
 func (t *sseClientTransport) readSSE(body io.ReadCloser) {
-	defer body.Close()
+	// DEBUG: Log SSE reader start
+	if t.logger != nil {
+		t.logger.Debugf("[🔍TEMP-DEBUG][client-sse] 🟢 SSE reader started")
+	}
+
+	defer func() {
+		body.Close()
+		// DEBUG: Log SSE reader exit
+		if t.logger != nil {
+			t.logger.Debugf("[🔍TEMP-DEBUG][client-sse] 🔴 SSE reader exiting")
+		}
+	}()
 
 	br := bufio.NewReader(body)
 	var eventType, eventData string
@@ -221,10 +252,13 @@ func (t *sseClientTransport) readSSE(body io.ReadCloser) {
 				if eventType != "" && eventData != "" {
 					t.handleEvent(eventType, eventData)
 				}
+				if t.logger != nil {
+					t.logger.Debugf("[🔍TEMP-DEBUG][client-sse] 🔴 SSE stream EOF, connection closed by server")
+				}
 				break
 			}
 			if t.logger != nil {
-				t.logger.Errorf("Error reading SSE stream: %v", err)
+				t.logger.Errorf("[🔍TEMP-DEBUG][client-sse] ❌ Error reading SSE stream: %v", err)
 			}
 			break
 		}
@@ -249,6 +283,9 @@ func (t *sseClientTransport) readSSE(body io.ReadCloser) {
 	}
 
 	// Connection closed, clean up.
+	if t.logger != nil {
+		t.logger.Debugf("[🔍TEMP-DEBUG][client-sse] 🔴 SSE connection closed, calling cleanup")
+	}
 	t.close()
 }
 
@@ -293,6 +330,17 @@ func (t *sseClientTransport) handleMessageEvent(data string) {
 			t.logger.Errorf("Error parsing message event: %v", err)
 		}
 		return
+	}
+
+	// DEBUG: Log message received
+	if t.logger != nil {
+		msgID := message["id"]
+		msgMethod := message["method"]
+		if msgID != nil {
+			t.logger.Debugf("[🔍TEMP-DEBUG][client] 📨 Received SSE message for request ID: %v", msgID)
+		} else if msgMethod != nil {
+			t.logger.Debugf("[🔍TEMP-DEBUG][client] 📨 Received SSE notification: %v", msgMethod)
+		}
 	}
 
 	// Check if the message is a request, response, or notification.
@@ -554,16 +602,30 @@ func (t *sseClientTransport) sendRequestInternal(ctx context.Context, req *JSONR
 	idStr := fmt.Sprintf("%v", req.ID)
 	responseChan := make(chan *json.RawMessage, 1)
 
+	// DEBUG: Log request preparation
+	if t.logger != nil {
+		t.logger.Debugf("[🔍TEMP-DEBUG][client] 🔵 Preparing request ID: %s, Method: %s", idStr, req.Method)
+	}
+
 	// Register the response channel.
 	t.responsesMu.Lock()
 	t.responses[idStr] = responseChan
 	t.responsesMu.Unlock()
+
+	// DEBUG: Log response channel registered
+	if t.logger != nil {
+		t.logger.Debugf("[🔍TEMP-DEBUG][client] 🔵 Response channel registered for request ID: %s", idStr)
+	}
 
 	// Ensure we clean up the response channel when done.
 	defer func() {
 		t.responsesMu.Lock()
 		delete(t.responses, idStr)
 		t.responsesMu.Unlock()
+		// DEBUG: Log cleanup
+		if t.logger != nil {
+			t.logger.Debugf("[🔍TEMP-DEBUG][client] 🟡 Response channel cleaned up for request ID: %s", idStr)
+		}
 	}()
 
 	// Send the HTTP request.
@@ -583,8 +645,24 @@ func (t *sseClientTransport) sendRequestInternal(ctx context.Context, req *JSONR
 	}
 
 	// Send the request.
+	// DEBUG: Log before sending HTTP request
+	if t.logger != nil {
+		// Check if context has deadline
+		if deadline, ok := ctx.Deadline(); ok {
+			timeout := time.Until(deadline)
+			t.logger.Debugf("[🔍TEMP-DEBUG][client] 🔵 Sending HTTP POST to %s, request ID: %s, context timeout: %v",
+				t.endpoint.String(), idStr, timeout)
+		} else {
+			t.logger.Debugf("[🔍TEMP-DEBUG][client] 🔵 Sending HTTP POST to %s, request ID: %s, no context timeout",
+				t.endpoint.String(), idStr)
+		}
+	}
+
 	resp, err := t.httpReqHandler.Handle(ctx, t.httpClient, httpReq)
 	if err != nil {
+		if t.logger != nil {
+			t.logger.Debugf("[🔍TEMP-DEBUG][client] ❌ HTTP POST failed for request ID: %s, error: %v", idStr, err)
+		}
 		return nil, fmt.Errorf("%w: %v", ErrHTTPRequestFailed, err)
 	}
 	defer resp.Body.Close()
@@ -592,17 +670,37 @@ func (t *sseClientTransport) sendRequestInternal(ctx context.Context, req *JSONR
 	// Check response status.
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
+		if t.logger != nil {
+			t.logger.Debugf("[🔍TEMP-DEBUG][client] ❌ HTTP POST bad status for request ID: %s, status: %d", idStr, resp.StatusCode)
+		}
 		return nil, fmt.Errorf("%w: status code %d, body: %s", ErrHTTPRequestFailed, resp.StatusCode, string(bodyBytes))
+	}
+
+	// DEBUG: Log successful HTTP response (but still waiting for SSE response)
+	if t.logger != nil {
+		t.logger.Debugf("[🔍TEMP-DEBUG][client] ✅ HTTP POST accepted (status: %d) for request ID: %s, now waiting for SSE response...",
+			resp.StatusCode, idStr)
 	}
 
 	// In the SSE transport, the response should come via the SSE stream.
 	// So here we just wait for the response on the channel.
 	select {
 	case <-ctx.Done():
+		if t.logger != nil {
+			t.logger.Debugf("[🔍TEMP-DEBUG][client] ❌ Context cancelled while waiting for response, request ID: %s, error: %v",
+				idStr, ctx.Err())
+		}
 		return nil, ctx.Err()
 	case rawMsg, ok := <-responseChan:
 		if !ok {
+			if t.logger != nil {
+				t.logger.Debugf("[🔍TEMP-DEBUG][client] ❌ Response channel closed for request ID: %s", idStr)
+			}
 			return nil, errors.New("response channel closed")
+		}
+		// DEBUG: Log successful response received
+		if t.logger != nil {
+			t.logger.Debugf("[🔍TEMP-DEBUG][client] ✅ Response received via SSE for request ID: %s", idStr)
 		}
 		// Parse the response as a JSON-RPC response.
 		var jsonResp map[string]interface{}
@@ -696,12 +794,24 @@ func (t *sseClientTransport) sendResponse(ctx context.Context, resp *JSONRPCResp
 // close closes the transport.
 func (t *sseClientTransport) close() error {
 	if !t.closed.CompareAndSwap(false, true) {
+		// DEBUG: Log already closed
+		if t.logger != nil {
+			t.logger.Debugf("[🔍TEMP-DEBUG][client-sse] 🟡 Transport already closed, skipping")
+		}
 		return nil // Already closed.
+	}
+
+	// DEBUG: Log starting close
+	if t.logger != nil {
+		t.logger.Debugf("[🔍TEMP-DEBUG][client-sse] 🔴 Closing SSE transport")
 	}
 
 	// Cancel the SSE connection if active.
 	t.sseConn.mutex.Lock()
 	if t.sseConn.cancel != nil {
+		if t.logger != nil {
+			t.logger.Debugf("[🔍TEMP-DEBUG][client-sse] 🔴 Cancelling SSE connection context")
+		}
 		t.sseConn.cancel()
 		t.sseConn.active = false
 	}
@@ -709,11 +819,20 @@ func (t *sseClientTransport) close() error {
 
 	// Close all response channels.
 	t.responsesMu.Lock()
-	for _, ch := range t.responses {
+	channelCount := len(t.responses)
+	for id, ch := range t.responses {
+		if t.logger != nil {
+			t.logger.Debugf("[🔍TEMP-DEBUG][client-sse] 🔴 Closing response channel for request ID: %s", id)
+		}
 		close(ch)
 	}
 	t.responses = make(map[string]chan *json.RawMessage)
 	t.responsesMu.Unlock()
+
+	// DEBUG: Log close complete
+	if t.logger != nil {
+		t.logger.Debugf("[🔍TEMP-DEBUG][client-sse] 🔴 SSE transport closed, cleaned up %d response channels", channelCount)
+	}
 
 	return nil
 }

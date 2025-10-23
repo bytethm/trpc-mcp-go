@@ -506,11 +506,15 @@ func sendSSEComment(w http.ResponseWriter, flusher http.Flusher, mu *sync.Mutex,
 
 // handleNotifications handles notification messages.
 func handleNotifications(logger Logger, w http.ResponseWriter, flusher http.Flusher, session *sseSession) {
+	// DEBUG: Log handler start
+	logger.Debugf("[🔍TEMP-DEBUG][notifications] 🟣 Handler started for session: %s", session.sessionID)
+
 	// Recover from panic when connection is closed.
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Debugf("Notification handler panicked for session %s: %v (connection likely closed)", session.sessionID, r)
+			logger.Errorf("[🔍TEMP-DEBUG][notifications] ❌ Handler panicked for session %s: %v (connection likely closed)", session.sessionID, r)
 		}
+		logger.Debugf("[🔍TEMP-DEBUG][notifications] 🟣 Handler exiting for session: %s", session.sessionID)
 	}()
 
 	for {
@@ -525,7 +529,7 @@ func handleNotifications(logger Logger, w http.ResponseWriter, flusher http.Flus
 			// Check if session is already closed before writing.
 			select {
 			case <-session.done:
-				logger.Debugf("Session %s is closed, stopping notification handler", session.sessionID)
+				logger.Debugf("[🔍TEMP-DEBUG][notifications] 🟣 Session closed, stopping handler for session: %s", session.sessionID)
 				return
 			default:
 			}
@@ -549,6 +553,7 @@ func handleNotifications(logger Logger, w http.ResponseWriter, flusher http.Flus
 			session.writeMu.Unlock()
 
 		case <-session.done:
+			logger.Debugf("[🔍TEMP-DEBUG][notifications] 🟣 Session done signal, handler terminating for session: %s", session.sessionID)
 			return
 		}
 	}
@@ -621,14 +626,18 @@ func handleEventQueue(logger Logger, w http.ResponseWriter, flusher http.Flusher
 
 // handleKeepAlive handles keep-alive messages.
 func handleKeepAlive(logger Logger, w http.ResponseWriter, flusher http.Flusher, session *sseSession, interval time.Duration) {
+	// DEBUG: Log handler start
+	logger.Debugf("[🔍TEMP-DEBUG][keepalive] 💚 Handler started for session: %s", session.sessionID)
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	// Recover from panic when connection is closed.
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Debugf("Keepalive handler panicked for session %s: %v (connection likely closed)", session.sessionID, r)
+			logger.Errorf("[🔍TEMP-DEBUG][keepalive] ❌ Handler panicked for session %s: %v (connection likely closed)", session.sessionID, r)
 		}
+		logger.Debugf("[🔍TEMP-DEBUG][keepalive] 💚 Handler exiting for session: %s", session.sessionID)
 	}()
 
 	for {
@@ -637,7 +646,7 @@ func handleKeepAlive(logger Logger, w http.ResponseWriter, flusher http.Flusher,
 			// Check if session is already closed before writing.
 			select {
 			case <-session.done:
-				logger.Debugf("Session %s is closed, stopping keepalive", session.sessionID)
+				logger.Debugf("[🔍TEMP-DEBUG][keepalive] 💚 Session closed, stopping handler for session: %s", session.sessionID)
 				return
 			default:
 			}
@@ -661,7 +670,7 @@ func handleKeepAlive(logger Logger, w http.ResponseWriter, flusher http.Flusher,
 			session.writeMu.Unlock()
 
 		case <-session.done:
-			logger.Debugf("Keepalive handler terminated for session %s", session.sessionID)
+			logger.Debugf("[🔍TEMP-DEBUG][keepalive] 💚 Session done signal, handler terminating for session: %s", session.sessionID)
 			return
 		}
 	}
