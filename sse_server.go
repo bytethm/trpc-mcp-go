@@ -460,6 +460,12 @@ func sendSSEEvent(w http.ResponseWriter, flusher http.Flusher, mu *sync.Mutex, e
 	if _, err := fmt.Fprint(w, event); err != nil {
 		return false
 	}
+	// Flush with panic recovery in case connection is closed.
+	defer func() {
+		if r := recover(); r != nil {
+			// Connection is likely closed, ignore panic.
+		}
+	}()
 	flusher.Flush()
 	return true
 }
@@ -469,12 +475,26 @@ func sendSSEComment(w http.ResponseWriter, flusher http.Flusher, mu *sync.Mutex,
 	mu.Lock()
 	defer mu.Unlock()
 
+	// Recover from panic when connection is closed.
+	defer func() {
+		if r := recover(); r != nil {
+			// Connection is likely closed, ignore panic.
+		}
+	}()
+
 	fmt.Fprintf(w, ": %s\n\n", comment)
 	flusher.Flush()
 }
 
 // handleNotifications handles notification messages.
 func handleNotifications(logger Logger, w http.ResponseWriter, flusher http.Flusher, session *sseSession) {
+	// Recover from panic when connection is closed.
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Debugf("Notification handler panicked for session %s: %v (connection likely closed)", session.sessionID, r)
+		}
+	}()
+
 	for {
 		select {
 		case notification := <-session.notificationChannel:
@@ -484,9 +504,30 @@ func handleNotifications(logger Logger, w http.ResponseWriter, flusher http.Flus
 				continue
 			}
 
+			// Check if session is already closed before writing.
+			select {
+			case <-session.done:
+				logger.Debugf("Session %s is closed, stopping notification handler", session.sessionID)
+				return
+			default:
+			}
+
 			session.writeMu.Lock()
-			fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
-			flusher.Flush()
+			// Write notification with error handling.
+			if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", data); err != nil {
+				logger.Debugf("Failed to write notification for session %s: %v (connection closed)", session.sessionID, err)
+				session.writeMu.Unlock()
+				return
+			}
+			// Flush with panic recovery.
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						logger.Debugf("Flush panicked in notification handler for session %s: %v", session.sessionID, r)
+					}
+				}()
+				flusher.Flush()
+			}()
 			session.writeMu.Unlock()
 
 		case <-session.done:
@@ -497,12 +538,40 @@ func handleNotifications(logger Logger, w http.ResponseWriter, flusher http.Flus
 
 // handleEventQueue handles event queue.
 func handleEventQueue(logger Logger, w http.ResponseWriter, flusher http.Flusher, session *sseSession) {
+	// Recover from panic when connection is closed.
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Debugf("Event queue handler panicked for session %s: %v (connection likely closed)", session.sessionID, r)
+		}
+	}()
+
 	for {
 		select {
 		case event := <-session.eventQueue:
+			// Check if session is already closed before writing.
+			select {
+			case <-session.done:
+				logger.Debugf("Session %s is closed, stopping event queue handler", session.sessionID)
+				return
+			default:
+			}
+
 			session.writeMu.Lock()
-			fmt.Fprint(w, event)
-			flusher.Flush()
+			// Write event with error handling.
+			if _, err := fmt.Fprint(w, event); err != nil {
+				logger.Debugf("Failed to write event for session %s: %v (connection closed)", session.sessionID, err)
+				session.writeMu.Unlock()
+				return
+			}
+			// Flush with panic recovery.
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						logger.Debugf("Flush panicked in event queue handler for session %s: %v", session.sessionID, r)
+					}
+				}()
+				flusher.Flush()
+			}()
 			session.writeMu.Unlock()
 
 		case <-session.done:
@@ -517,12 +586,40 @@ func handleKeepAlive(logger Logger, w http.ResponseWriter, flusher http.Flusher,
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	// Recover from panic when connection is closed.
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Debugf("Keepalive handler panicked for session %s: %v (connection likely closed)", session.sessionID, r)
+		}
+	}()
+
 	for {
 		select {
 		case <-ticker.C:
+			// Check if session is already closed before writing.
+			select {
+			case <-session.done:
+				logger.Debugf("Session %s is closed, stopping keepalive", session.sessionID)
+				return
+			default:
+			}
+
 			session.writeMu.Lock()
-			fmt.Fprint(w, ": keepalive\n\n")
-			flusher.Flush()
+			// Write keepalive with error handling.
+			if _, err := fmt.Fprint(w, ": keepalive\n\n"); err != nil {
+				logger.Debugf("Failed to write keepalive for session %s: %v (connection closed)", session.sessionID, err)
+				session.writeMu.Unlock()
+				return
+			}
+			// Flush with panic recovery in case underlying writer is nil.
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						logger.Debugf("Flush panicked for session %s: %v (connection closed)", session.sessionID, r)
+					}
+				}()
+				flusher.Flush()
+			}()
 			session.writeMu.Unlock()
 
 		case <-session.done:

@@ -110,8 +110,13 @@ func NewTimeEncoder() zapcore.TimeEncoder {
 	}
 }
 
-// NewZapLogger creates a ZapLogger with trpc-go style zap config.
+// NewZapLogger creates a ZapLogger with trpc-go style zap config (default Info level).
 func NewZapLogger() *ZapLogger {
+	return NewZapLoggerWithLevel(zapcore.InfoLevel)
+}
+
+// NewZapLoggerWithLevel creates a ZapLogger with trpc-go style zap config and custom log level.
+func NewZapLoggerWithLevel(level zapcore.Level) *ZapLogger {
 	// Create encoder config compatible with trpc-go.
 	encoderConfig := zapcore.EncoderConfig{
 		TimeKey:        "T",
@@ -131,11 +136,11 @@ func NewZapLogger() *ZapLogger {
 	// Create console encoder.
 	consoleEncoder := zapcore.NewConsoleEncoder(encoderConfig)
 
-	// Create core.
+	// Create core with custom log level.
 	core := zapcore.NewCore(
 		consoleEncoder,
 		zapcore.Lock(os.Stderr),
-		zap.NewAtomicLevelAt(zapcore.InfoLevel),
+		zap.NewAtomicLevelAt(level),
 	)
 
 	// Create logger, add caller information, and set caller skip level to 2.

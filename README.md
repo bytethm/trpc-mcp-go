@@ -1611,6 +1611,81 @@ go build && ./client
 - Use proper result types: `*CallToolResult`, `*GetPromptResult`, `*ListPromptsResult`, etc.
 - Middleware executes in registration order (onion model)
 
+### 8. How to enable Debug logging?
+
+By default, the framework uses **Info** level logging. To see debug logs (useful for troubleshooting):
+
+#### Option 1: Set Global Default Logger
+
+```go
+// Enable debug logging globally (affects all servers and clients)
+debugLogger := mcp.NewZapLoggerWithLevel(mcp.LogLevelDebug)
+mcp.SetDefaultLogger(debugLogger)
+
+// All components created afterwards will use debug logging
+server := mcp.NewServer("My-Server", "1.0.0")
+client := mcp.NewClient("http://localhost:3000/mcp", clientInfo)
+```
+
+#### Option 2: Set Logger Per-Server
+
+```go
+// This server will show debug logs
+debugLogger := mcp.NewZapLoggerWithLevel(mcp.LogLevelDebug)
+server := mcp.NewServer(
+    "My-Server",
+    "1.0.0",
+    mcp.WithServerLogger(debugLogger),  // Server-specific logger
+)
+```
+
+#### Option 3: Set Logger Per-Client
+
+```go
+// This client will show debug logs
+debugLogger := mcp.NewZapLoggerWithLevel(mcp.LogLevelDebug)
+client := mcp.NewClient(
+    "http://localhost:3000/mcp",
+    clientInfo,
+    mcp.WithClientLogger(debugLogger),  // Client-specific logger
+)
+```
+
+#### Available Log Levels
+
+```go
+mcp.LogLevelDebug  // Most verbose - shows all logs (useful for development)
+mcp.LogLevelInfo   // Default - shows info and above (production default)
+mcp.LogLevelWarn   // Shows warnings and errors only
+mcp.LogLevelError  // Least verbose - errors only (CI/CD recommended)
+```
+
+#### When to Use Debug Logging
+
+- **Development**: See detailed request/response flow
+- **Troubleshooting**: Diagnose connection issues, SSE panics, middleware execution
+- **Integration**: Understand how components interact
+- **Performance**: Identify bottlenecks
+
+#### Example Output Difference
+
+**With LogLevelInfo (default):**
+```
+2025-10-23 16:30:45.125 INFO  MCP server started on :3000
+```
+
+**With LogLevelDebug:**
+```
+2025-10-23 16:30:45.123 DEBUG Initializing MCP handler
+2025-10-23 16:30:45.124 DEBUG Registering tool: greet
+2025-10-23 16:30:45.125 INFO  MCP server started on :3000
+2025-10-23 16:30:50.456 DEBUG Received request: tools/call
+2025-10-23 16:30:50.457 DEBUG Processing tool: greet
+2025-10-23 16:30:50.458 DEBUG Sending response
+```
+
+See [`examples/debug-logging/`](examples/debug-logging/) for a complete example.
+
 ## Copyright
 
 The copyright notice pertaining to the Tencent code in this repo was previously in the name of “THL A29 Limited.”  That entity has now been de-registered.  You should treat all previously distributed copies of the code as if the copyright notice was in the name of “Tencent.”
