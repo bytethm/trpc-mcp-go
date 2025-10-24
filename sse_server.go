@@ -410,10 +410,35 @@ func (s *SSEServer) handleSSE(w http.ResponseWriter, r *http.Request) {
 	// DEBUG: Log session stored
 	s.logger.Debugf("[🔍TEMP-DEBUG][handleSSE] 🟢 Session stored: %s", sessionID)
 
+	// DEBUG: Log ALL HTTP headers
+	s.logger.Debugf("[🔍TEMP-DEBUG][handleSSE] 📋 ALL HTTP Headers for session %s:", sessionID)
+	for headerName, headerValues := range r.Header {
+		for _, headerValue := range headerValues {
+			s.logger.Debugf("[🔍TEMP-DEBUG][handleSSE] 📋   %s: %s", headerName, headerValue)
+		}
+	}
+
+	// DEBUG: Log request context deadline BEFORE any processing
+	if deadline, ok := r.Context().Deadline(); ok {
+		remaining := time.Until(deadline)
+		s.logger.Debugf("[🔍TEMP-DEBUG][handleSSE] ⏱️  r.Context() INITIAL deadline: %v (remaining: %v)",
+			deadline.Format("15:04:05.000"), remaining)
+	} else {
+		s.logger.Debugf("[🔍TEMP-DEBUG][handleSSE] ⏱️  r.Context() has NO INITIAL deadline")
+	}
+
 	// Apply context function.
 	ctx := r.Context()
 	if s.contextFunc != nil {
 		ctx = s.contextFunc(ctx, r)
+		// DEBUG: Log context after contextFunc
+		if deadline, ok := ctx.Deadline(); ok {
+			remaining := time.Until(deadline)
+			s.logger.Debugf("[🔍TEMP-DEBUG][handleSSE] ⏱️  ctx (after contextFunc) has deadline: %v (remaining: %v)",
+				deadline.Format("15:04:05.000"), remaining)
+		} else {
+			s.logger.Debugf("[🔍TEMP-DEBUG][handleSSE] ⏱️  ctx (after contextFunc) has NO deadline")
+		}
 	}
 
 	// Set server instance to context.

@@ -169,14 +169,14 @@ func (t *sseClientTransport) start(ctx context.Context) error {
 	if t.logger != nil {
 		if deadline, ok := sseCtx.Deadline(); ok {
 			timeout := time.Until(deadline)
-			t.logger.Debugf("[🔍TEMP-DEBUG][client-sse] 🟢 Sending SSE GET request to %s with context timeout: %v", 
+			t.logger.Debugf("[🔍TEMP-DEBUG][client-sse] 🟢 Sending SSE GET request to %s with context timeout: %v",
 				t.baseURL.String(), timeout)
 		} else {
-			t.logger.Debugf("[🔍TEMP-DEBUG][client-sse] 🟢 Sending SSE GET request to %s with NO context timeout", 
+			t.logger.Debugf("[🔍TEMP-DEBUG][client-sse] 🟢 Sending SSE GET request to %s with NO context timeout",
 				t.baseURL.String())
 		}
 	}
-	
+
 	resp, err := t.httpReqHandler.Handle(sseCtx, t.httpClient, req)
 	if err != nil {
 		if t.logger != nil {
@@ -184,7 +184,7 @@ func (t *sseClientTransport) start(ctx context.Context) error {
 		}
 		return fmt.Errorf("%w: %v", ErrHTTPRequestFailed, err)
 	}
-	
+
 	// DEBUG: Log SSE connection established
 	if t.logger != nil {
 		t.logger.Debugf("[🔍TEMP-DEBUG][client-sse] ✅ SSE GET request successful, status: %d", resp.StatusCode)
