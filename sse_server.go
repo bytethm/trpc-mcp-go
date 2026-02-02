@@ -377,6 +377,7 @@ func (s *SSEServer) Shutdown(ctx context.Context) error {
 		// Close all sessions.
 		s.sessions.Range(func(key, value interface{}) bool {
 			if session, ok := value.(*sseSession); ok {
+				s.logger.Errorf("Session deleted in shutdown: sessionID=%v", key)
 				closeSessionDone(s.logger, session)
 			}
 			s.sessions.Delete(key)
@@ -475,6 +476,7 @@ func (s *SSEServer) handleSSE(w http.ResponseWriter, r *http.Request) {
 		data:                make(map[string]interface{}),
 	}
 	s.sessions.Store(sessionID, session)
+	s.logger.Errorf("Session created: sessionID=%s", sessionID)
 
 	// Apply context function.
 	ctx := r.Context()
@@ -531,17 +533,17 @@ func (s *SSEServer) handleSSE(w http.ResponseWriter, r *http.Request) {
 	// Wait for connection to close.
 	select {
 	case <-ctx.Done():
-		s.logger.Debugf("Context cancelled for session %s", sessionID)
+		s.logger.Errorf("Context cancelled for session %s", sessionID)
 	case <-r.Context().Done():
-		s.logger.Debugf("Request context cancelled for session %s", sessionID)
+		s.logger.Errorf("Request context cancelled for session %s", sessionID)
 	case <-session.done:
-		s.logger.Debugf("Session %s closed", sessionID)
+		s.logger.Errorf("Session %s closed", sessionID)
 	}
 
 	// Clean up resources.
 	closeSessionDone(s.logger, session)
 	s.sessions.Delete(sessionID)
-	s.logger.Debugf("Cleaned up session %s", sessionID)
+	s.logger.Errorf("Session deleted in cleanup: sessionID=%s", sessionID)
 }
 
 // closeSessionDone safely closes the session done channel with panic protection.
@@ -705,6 +707,7 @@ func (s *SSEServer) handleMessage(w http.ResponseWriter, r *http.Request) {
 				s.handleSessionError(w, err)
 				return
 			}
+			s.logger.Errorf("Session not found locally, trying to publish to remote: sessionID=%s", sessionID)
 			if err := s.tryPublish(r.Context(), sessionID, r); err != nil {
 				if s.logger != nil {
 					s.logger.Errorf("Failed to publish message for remote session %s: %v", sessionID, err)
@@ -899,6 +902,7 @@ func (s *SSEServer) getSessionFromRequest(r *http.Request) (*sseSession, error) 
 	// Get session.
 	sessionValue, ok := s.sessions.Load(sessionID)
 	if !ok {
+		s.logger.Errorf("Session not found in getSessionFromRequest: sessionID=%s", sessionID)
 		return nil, fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
 	}
 
@@ -1009,6 +1013,7 @@ func (s *SSEServer) createSessionContext(ctx context.Context, session *sseSessio
 func (s *SSEServer) handleSessionMessage(ctx context.Context, sessionID string, payload []byte) error {
 	sessionValue, ok := s.sessions.Load(sessionID)
 	if !ok {
+		s.logger.Errorf("Session not found in handleSessionMessage: sessionID=%s", sessionID)
 		return fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
 	}
 
@@ -1374,6 +1379,7 @@ func (s *SSEServer) sendNotificationToSession(sessionID string, notification *JS
 	// Get session
 	sessionValue, ok := s.sessions.Load(sessionID)
 	if !ok {
+		s.logger.Errorf("Session not found in sendNotificationToSession: sessionID=%s, method=%s", sessionID, notification.Method)
 		return fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
 	}
 
@@ -1580,6 +1586,7 @@ func (s *SSEServer) SendRequest(ctx context.Context, sessionID string, request *
 	// Get session
 	sessionValue, ok := s.sessions.Load(sessionID)
 	if !ok {
+		s.logger.Errorf("Session not found in SendRequest: sessionID=%s, method=%s, requestID=%v", sessionID, request.Method, request.ID)
 		return nil, fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
 	}
 
