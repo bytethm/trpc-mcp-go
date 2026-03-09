@@ -511,6 +511,7 @@ func (s *SSEServer) handleSSE(w http.ResponseWriter, r *http.Request) {
 	// Send endpoint event.
 	endpointURL := s.getMessageEndpointForClient(sessionID)
 	if !stream.SendEvent("endpoint", endpointURL) {
+		s.logger.Errorf("SSE exit: SendEvent failed, sessionID=%s, age=%v", sessionID, time.Since(session.createdAt))
 		return
 	}
 
@@ -531,17 +532,17 @@ func (s *SSEServer) handleSSE(w http.ResponseWriter, r *http.Request) {
 	// Wait for connection to close.
 	select {
 	case <-ctx.Done():
-		s.logger.Debugf("Context cancelled for session %s", sessionID)
+		s.logger.Errorf("SSE exit: ctx.Done, sessionID=%s, age=%v, ctxErr=%v", sessionID, time.Since(session.createdAt), ctx.Err())
 	case <-r.Context().Done():
-		s.logger.Debugf("Request context cancelled for session %s", sessionID)
+		s.logger.Errorf("SSE exit: r.Context.Done, sessionID=%s, age=%v, ctxErr=%v", sessionID, time.Since(session.createdAt), r.Context().Err())
 	case <-session.done:
-		s.logger.Debugf("Session %s closed", sessionID)
+		s.logger.Errorf("SSE exit: session.done, sessionID=%s, age=%v", sessionID, time.Since(session.createdAt))
 	}
 
 	// Clean up resources.
 	closeSessionDone(s.logger, session)
 	s.sessions.Delete(sessionID)
-	s.logger.Debugf("Cleaned up session %s", sessionID)
+	s.logger.Errorf("Session deleted: sessionID=%s, age=%v", sessionID, time.Since(session.createdAt))
 }
 
 // closeSessionDone safely closes the session done channel with panic protection.
