@@ -475,6 +475,7 @@ func (s *SSEServer) handleSSE(w http.ResponseWriter, r *http.Request) {
 		data:                make(map[string]interface{}),
 	}
 	s.sessions.Store(sessionID, session)
+	s.logger.Infof("handleSSE: SSEServer=%p, sessionID=%s", s, sessionID)
 
 	// Apply context function.
 	ctx := r.Context()
@@ -688,6 +689,7 @@ func handleKeepAlive(ctx context.Context, logger Logger, w http.ResponseWriter, 
 
 // handleMessage handles client message requests.
 func (s *SSEServer) handleMessage(w http.ResponseWriter, r *http.Request) {
+	s.logger.Infof("handleMessage: SSEServer=%p, sessionID=%s", s, r.URL.Query().Get("sessionId"))
 	// Check method.
 	if r.Method != http.MethodPost {
 		s.logger.Errorf("Invalid method for message endpoint: %s", r.Method)
