@@ -902,6 +902,13 @@ func (s *SSEServer) getSessionFromRequest(r *http.Request) (*sseSession, error) 
 	// Get session.
 	sessionValue, ok := s.sessions.Load(sessionID)
 	if !ok {
+		var existingSessions []string
+		s.sessions.Range(func(key, value interface{}) bool {
+			existingSessions = append(existingSessions, fmt.Sprintf("%q", key))
+			return true
+		})
+		s.logger.Errorf("Session not found: lookup=%q, existing=%v, count=%d",
+			sessionID, existingSessions, len(existingSessions))
 		return nil, fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
 	}
 
