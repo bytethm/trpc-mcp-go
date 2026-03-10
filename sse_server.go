@@ -475,7 +475,7 @@ func (s *SSEServer) handleSSE(w http.ResponseWriter, r *http.Request) {
 		data:                make(map[string]interface{}),
 	}
 	s.sessions.Store(sessionID, session)
-	s.logger.Infof("handleSSE: SSEServer=%p, sessionID=%s", s, sessionID)
+	s.logger.Infof("Session created: SSEServer=%p, sessionID=%s", s, sessionID)
 
 	// Apply context function.
 	ctx := r.Context()
@@ -689,7 +689,8 @@ func handleKeepAlive(ctx context.Context, logger Logger, w http.ResponseWriter, 
 
 // handleMessage handles client message requests.
 func (s *SSEServer) handleMessage(w http.ResponseWriter, r *http.Request) {
-	s.logger.Infof("handleMessage: SSEServer=%p, sessionID=%s", s, r.URL.Query().Get("sessionId"))
+	s.logger.Infof("handleMessage: SSEServer=%p, sessionID=%s, url=%s, remoteAddr=%s",
+		s, r.URL.Query().Get("sessionId"), r.URL.String(), r.RemoteAddr)
 	// Check method.
 	if r.Method != http.MethodPost {
 		s.logger.Errorf("Invalid method for message endpoint: %s", r.Method)
@@ -1410,6 +1411,7 @@ func (s *SSEServer) sendNotificationToSession(sessionID string, notification *JS
 func (s *SSEServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Handle path matching.
 	path := r.URL.Path
+	s.logger.Infof("ServeHTTP: SSEServer=%p, path=%s, rawURI=%s", s, path, r.RequestURI)
 
 	// If basePath is set, remove the basePath prefix for correct path matching.
 	if s.basePath != "" && strings.HasPrefix(path, s.basePath) {
